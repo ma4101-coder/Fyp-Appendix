@@ -1,0 +1,794 @@
+Appendix A: Data Collection 
+
+# clone YOLOv5 repository 
+!git clone https://github.com/ultralytics/yolov5  # clone repo 
+%cd yolov5 
+!git reset --hard 064365d8683fd002e9ad789c1e91fa3d021b44f0 
+# install dependencies as necessary 
+!pip install -qr requirements.txt  # install dependencies (ignore errors) 
+import torch 
+from IPython.display import Image, clear_output  # to display images 
+from utils.downloads import attempt_download  # to download models/datasets 
+# clear_output() 
+print('Setup complete. Using torch %s %s' % (torch._version_, torch.cuda.get_device_properties(0) if torch.cuda.is_available() else 'CPU')) 
+!pip install roboflow 
+from roboflow import Roboflow 
+rf = Roboflow(api_key="opYIr2vvc7tjMX4F2cX1") 
+project = rf.workspace("muneeb-ahmed-isnnm").project("forest-fire-iizhf") 
+dataset = project.version(3).download("yolov5") 
+%cd /content/yolov5 
+#after following the link above, receive python code with these fields filled in 
+#from roboflow import Roboflow 
+#rf = Roboflow(api_key="YOUR API KEY HERE") 
+#project = rf.workspace().project("YOUR PROJECT") 
+#dataset = project.version("YOUR VERSION").download("yolov5") 
+
+ # this is the YAML file Roboflow wrote for us that we're loading into this notebook with our data 
+%cat /content/yolov5/Forest-Fire-3/data.yaml 
+# define number of classes based on YAML 
+import yaml 
+with open("/content/yolov5/Forest-Fire-3/data.yaml", 'r') as stream: 
+    num_classes = str(yaml.safe_load(stream)['nc']) 
+#this is the model configuration we will use for our tutorial  
+%cat /content/yolov5/models/yolov5s.yaml 
+#customize iPython writefile so we can write variables 
+from IPython.core.magic import register_line_cell_magic 
+@register_line_cell_magic 
+def writetemplate(line, cell): 
+
+    with open(line, 'w') as f: 
+
+        f.write(cell.format(**globals())) 
+
+%%writetemplate /content/yolov5/models/custom_yolov5s.yaml 
+
+  
+
+# parameters 
+
+nc: {num_classes}  # number of classes 
+
+depth_multiple: 0.33  # model depth multiple 
+
+width_multiple: 0.50  # layer channel multiple 
+
+  
+
+# anchors 
+
+anchors: 
+
+  - [10,13, 16,30, 33,23]  # P3/8 
+
+  - [30,61, 62,45, 59,119]  # P4/16 
+
+  - [116,90, 156,198, 373,326]  # P5/32 
+
+  
+
+# YOLOv5 backbone 
+
+backbone: 
+
+  # [from, number, module, args] 
+
+  [[-1, 1, Focus, [64, 3]],  # 0-P1/2 
+
+   [-1, 1, Conv, [128, 3, 2]],  # 1-P2/4 
+
+   [-1, 3, BottleneckCSP, [128]], 
+
+   [-1, 1, Conv, [256, 3, 2]],  # 3-P3/8 
+
+   [-1, 9, BottleneckCSP, [256]], 
+
+   [-1, 1, Conv, [512, 3, 2]],  # 5-P4/16 
+
+   [-1, 9, BottleneckCSP, [512]], 
+
+   [-1, 1, Conv, [1024, 3, 2]],  # 7-P5/32 
+
+   [-1, 1, SPP, [1024, [5, 9, 13]]], 
+
+   [-1, 3, BottleneckCSP, [1024, False]],  # 9 
+
+  ] 
+
+  
+
+# YOLOv5 head 
+
+head: 
+
+  [[-1, 1, Conv, [512, 1, 1]], 
+
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']], 
+
+   [[-1, 6], 1, Concat, [1]],  # cat backbone P4 
+
+   [-1, 3, BottleneckCSP, [512, False]],  # 13 
+
+  
+
+   [-1, 1, Conv, [256, 1, 1]], 
+
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']], 
+
+   [[-1, 4], 1, Concat, [1]],  # cat backbone P3 
+
+   [-1, 3, BottleneckCSP, [256, False]],  # 17 (P3/8-small) 
+
+  
+
+   [-1, 1, Conv, [256, 3, 2]], 
+
+   [[-1, 14], 1, Concat, [1]],  # cat head P4 
+
+   [-1, 3, BottleneckCSP, [512, False]],  # 20 (P4/16-medium) 
+
+  
+
+   [-1, 1, Conv, [512, 3, 2]], 
+
+   [[-1, 10], 1, Concat, [1]],  # cat head P5 
+
+   [-1, 3, BottleneckCSP, [1024, False]],  # 23 (P5/32-large) 
+
+  
+
+   [[17, 20, 23], 1, Detect, [nc, anchors]],  # Detect(P3, P4, P5) 
+
+  ] 
+
+ 
+
+# train yolov5s on custom data for 100 epochs 
+
+# time its performance 
+
+%%time 
+
+%cd /content/yolov5/ 
+
+!python train.py --img 640 --batch 20 --epochs 99 --data /content/yolov5/Forest-Fire-3/data.yaml --cfg ./models/custom_yolov5s.yaml --weights '' --name yolov5s_results  --cache 
+
+ 
+
+# Start tensorboard 
+
+# Launch after you have started training 
+
+# logs save in the folder "runs" 
+
+%load_ext tensorboard 
+
+%tensorboard --logdir runs 
+
+ 
+
+# we can also output some older school graphs if the tensor board isn't working for whatever reason...  
+
+from utils.plots import plot_results  # plot results.txt as results.png 
+
+Image(filename='/content/yolov5/runs/train/yolov5s_results/results.png', width=1000)  # view results.png 
+
+ 
+
+# print out an augmented training example 
+
+print("GROUND TRUTH AUGMENTED TRAINING DATA:") 
+
+Image(filename='/content/yolov5/runs/train/yolov5s_results/train_batch0.jpg', width=900) 
+
+ 
+
+# trained weights are saved by default in our weights folder 
+
+%ls runs/ 
+
+ 
+
+%ls runs/train/yolov5s_results/weights 
+
+ 
+
+# when we ran this, we saw .007 second inference time. That is 140 FPS on a TESLA P100! 
+
+# use the best weights! 
+
+%cd /content/yolov5/ 
+
+!python detect.py --weights runs/train/yolov5s_results/weights/best.pt --img 640 --conf 0.5 --source /content/yolov5/Forest-Fire-3/test/images 
+
+ 
+
+#display inference on ALL test images 
+
+#this looks much better with longer training above 
+
+  
+
+import glob 
+
+from IPython.display import Image, display 
+
+  
+
+for imageName in glob.glob('/content/yolov5/runs/detect/exp/*.jpg'): #assuming JPG 
+
+    display(Image(filename=imageName)) 
+
+    print("\n") 
+
+ 
+
+!pip install roboflow 
+
+import os 
+
+import time 
+
+import csv 
+
+  
+
+from roboflow import Roboflow 
+
+rf = Roboflow(api_key="opYIr2vvc7tjMX4F2cX1") 
+
+project = rf.workspace("muneeb-ahmed-isnnm").project("forest-fire-iizhf") 
+
+model = project.version(1).model 
+
+  
+
+content_folder = '/content/Dataset' 
+
+all_results = [] 
+
+for root, dirs, files in os.walk(content_folder): 
+
+    for file in files: 
+
+        file_path = os.path.join(root, file) 
+
+        result = model.predict(file_path, confidence=40, overlap=30).json() 
+
+        all_results.append(result) 
+
+  
+
+previous_inch = None 
+
+previous_time = None 
+
+speed_values = []  
+
+  
+
+for result in all_results: 
+
+    list1 = result.get('predictions') 
+
+    if list1: 
+
+        object1 = list1[0] 
+
+        list2 = object1.get('width') 
+
+        inches = list2 / 8.0 
+
+        current_time = time.time() 
+
+        # curren_time += 120  
+
+        if previous_inch is not None and previous_time is not None: 
+
+            distance = abs(inches - previous_inch) 
+
+            distance_meter = distance * 0.0254   
+
+            speed = round((distance / 120),5) 
+
+            print(f"Speed: {speed} m/s") 
+
+            speed_values.append(speed) 
+
+  
+
+        previous_inch = inches 
+
+        previous_time = current_time 
+
+ 
+
+import pandas as pd 
+
+  
+
+columns = ["Spread Rate"]   
+
+  
+
+df = pd.DataFrame(speed_values, columns=columns) 
+
+df = df.rename_axis('Images') 
+
+filename = "data.csv" 
+
+df.to_csv(filename, index=True) 
+
+print(f"CSV file '{filename}' created successfully.") 
+
+ 
+
+from google.colab import files 
+
+files.download(filename) 
+
+ 
+
+ 
+ 
+
+Appendix B: Error Handling 1 – Frames overlapping: 
+
+ 
+
+import cv2 
+
+import torch 
+
+from yolov5.detect import detect_image 
+
+ 
+ 
+
+# Load the YOLOv5 model 
+
+model_path = 'path/to/yolov5s.pt' # Replace with the path to your YOLOv5 weights file 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+
+model = torch.load(model_path, map_location=device)['model'].float().eval() 
+
+ 
+ 
+
+# Read and process the image 
+
+image_path = 'path/to/image.jpg' # Replace with the path to your image file 
+
+image = cv2.imread(image_path) 
+
+image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Detect fire in the image 
+
+results = detect_image(image_rgb, model) 
+
+ 
+ 
+
+# Process the detection results 
+
+for result in results: 
+
+label, confidence, bbox = result['class'], result['conf'], result['bbox'] 
+
+x, y, w, h = bbox 
+
+cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2) 
+
+cv2.putText(image, f'{label}: {confidence:.2f}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2) 
+
+ 
+ 
+
+# Display the image with bounding boxes and labels 
+
+cv2.imshow('Fire Detection', image) 
+
+cv2.waitKey(0) 
+
+cv2.destroyAllWindows() 
+
+ 
+ 
+
+Appendix C: Frames overlapping 2: 
+
+ 
+
+import cv2 
+
+import numpy as np 
+
+import torch 
+
+from yolov5.detect import detect_image 
+
+ 
+ 
+
+# Load the YOLOv5 model 
+
+model_path = 'path/to/yolov5s.pt' # Replace with the path to your YOLOv5 weights file 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+
+model = torch.load(model_path, map_location=device)['model'].float().eval() 
+
+ 
+ 
+
+# Read and process the first frame 
+
+frame1_path = 'path/to/frame1.jpg' # Replace with the path to the first frame 
+
+frame1 = cv2.imread(frame1_path) 
+
+frame1_rgb = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Read and process the second frame 
+
+frame2_path = 'path/to/frame2.jpg' # Replace with the path to the second frame 
+
+frame2 = cv2.imread(frame2_path) 
+
+frame2_rgb = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Perform frame differencing to detect changes 
+
+diff = cv2.absdiff(frame1_rgb, frame2_rgb) 
+
+diff_gray = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY) 
+
+_, threshold = cv2.threshold(diff_gray, 30, 255, cv2.THRESH_BINARY) 
+
+ 
+ 
+
+# Find contours in the thresholded difference image 
+
+contours, _ = cv2.findContours(threshold, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) 
+
+ 
+ 
+
+# If no contours are found, generate a new frame by averaging the previous two frames 
+
+if len(contours) == 0: 
+
+new_frame = cv2.addWeighted(frame1, 0.5, frame2, 0.5, 0) 
+
+new_frame_rgb = cv2.cvtColor(new_frame, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Detect fire in the new frame 
+
+results = detect_image(new_frame_rgb, model) 
+ 
+ 
+
+Appendix D: Frames overlapping 3: 
+
+ 
+
+import cv2 
+
+import numpy as np 
+
+import torch 
+
+from yolov5.detect import detect_image 
+
+ 
+ 
+
+# Load the YOLOv5 model 
+
+model_path = 'path/to/yolov5s.pt' # Replace with the path to your YOLOv5 weights file 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+
+model = torch.load(model_path, map_location=device)['model'].float().eval() 
+
+ 
+ 
+
+# Read and process the first frame 
+
+frame1_path = 'path/to/frame1.jpg' # Replace with the path to the first frame 
+
+frame1 = cv2.imread(frame1_path) 
+
+frame1_rgb = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Read and process the second frame 
+
+frame2_path = 'path/to/frame2.jpg' # Replace with the path to the second frame 
+
+frame2 = cv2.imread(frame2_path) 
+
+frame2_rgb = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Perform frame differencing to detect changes 
+
+diff = cv2.absdiff(frame1_rgb, frame2_rgb) 
+
+diff_gray = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY) 
+
+_, threshold = cv2.threshold(diff_gray, 30, 255, cv2.THRESH_BINARY) 
+
+ 
+ 
+
+# Find contours in the thresholded difference image 
+
+contours, _ = cv2.findContours(threshold, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) 
+
+ 
+ 
+
+# If no contours are found, generate a new frame by averaging the previous two frames 
+
+if len(contours) == 0: 
+
+new_frame = cv2.addWeighted(frame1, 0.5, frame2, 0.5, 0) 
+
+new_frame_rgb = cv2.cvtColor(new_frame, cv2.COLOR_BGR2RGB) 
+
+ 
+ 
+
+# Detect fire in the new frame 
+
+results = detect_image(new_frame_rgb, model) 
+
+ 
+ 
+
+# Process the detection results and display the image as needed 
+
+for result in results: 
+
+label, confidence, bbox = result['class'], result['conf'], result['bbox'] 
+
+x, y, w, h = bbox 
+
+cv2.rectangle(new_frame, (x, y), (x+w, y+h), (0, 255, 0), 2) 
+
+cv2.putText(new_frame, f'{label}: {confidence:.2f}', (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2) 
+
+ 
+ 
+
+# Display the image with bounding boxes and labels 
+
+cv2.imshow('Fire Detection', new_frame) 
+
+cv2.waitKey(0) 
+
+cv2.destroyAllWindows() 
+
+ 
+ 
+
+Appendix E: Divided by Zero-1 
+
+ 
+
+!pip install roboflow 
+
+import os 
+
+import time 
+
+import csv 
+
+ 
+ 
+
+from roboflow import Roboflow 
+
+rf = Roboflow(api_key="opYIr2vvc7tjMX4F2cX1") 
+
+project = rf.workspace("muneeb-ahmed-isnnm").project("forest-fire-iizhf") 
+
+model = project.version(1).model 
+
+ 
+ 
+
+content_folder = '/content/Dataset' 
+
+all_results = [] 
+
+for root, dirs, files in os.walk(content_folder): 
+
+for file in files: 
+
+file_path = os.path.join(root, file) 
+
+result = model.predict(file_path, confidence=40, overlap=30).json() 
+
+all_results.append(result) 
+
+ 
+ 
+
+previous_inch = None 
+
+previous_time = None 
+
+speed_values = []  
+
+ 
+ 
+
+for result in all_results: 
+
+list1 = result.get('predictions') 
+
+if list1: 
+
+object1 = list1[0] 
+
+list2 = object1.get('width') 
+
+inches = list2 / 8.0 
+
+current_time = time.time() 
+
+# curren_time += 120  
+
+if previous_inch is not None and previous_time is not None: 
+
+distance = abs(inches - previous_inch) 
+
+distance_meter = distance * 0.0254  
+
+speed = round((distance / 120),5) 
+
+print(f"Speed: {speed} m/s") 
+
+speed_values.append(speed) 
+
+ 
+ 
+
+previous_inch = inches 
+
+previous_time = current_time 
+
+ 
+ 
+
+Appendix F: Divided by Zero-2 
+ 
+
+!pip install roboflow 
+
+import os 
+
+import time 
+
+import csv 
+
+for result in all_results: 
+
+list1 = result.get('predictions') 
+
+if list1: 
+
+object1 = list1[0] 
+
+list2 = object1.get('width') 
+
+inches = list2 / 8.0 
+
+current_time = time.time() 
+
+if previous_inch is not None and previous_time is not None: 
+
+distance = abs(inches - previous_inch) 
+
+distance_meter = distance * 0.0254  
+
+time_difference = current_time - previous_time 
+
+ 
+ 
+
+if time_difference != 0: 
+
+speed = round((distance / time_difference), 5) 
+
+print(f"Speed: {speed} m/s") 
+
+speed_values.append(speed) 
+
+previous_inch = inches 
+
+previous_time = current_time 
+
+ 
+ 
+
+from roboflow import Roboflow 
+
+rf = Roboflow(api_key="opYIr2vvc7tjMX4F2cX1") 
+
+project = rf.workspace("muneeb-ahmed-isnnm").project("forest-fire-iizhf") 
+
+model = project.version(1).model 
+
+ 
+ 
+
+if previous_inch is not None and previous_time is not None: 
+
+distance = abs(inches - previous_inch) 
+
+distance_meter = distance * 0.0254  
+
+time_difference = current_time - previous_time 
+
+ 
+ 
+
+if time_difference != 0: 
+
+speed = round((distance / time_difference), 5) 
+
+print(f"Speed: {speed} m/s") 
+
+speed_values.append(speed) 
+
+ 
+
+ 
+
+Appendix G: (Confidence Level < 0.5) 
+
+ 
+
+//import glob  
+
+from IPython.display import Image, display  
+
+  
+
+//for imageName in glob.glob('/content/yolov5/runs/detect/exp/*.jpg'):  # assuming JPG  
+
+    # Perform your confidence check here  
+
+    result = model.predict(imageName, confidence=40, overlap=30).json()  
+
+    if result['predictions'][0]['confidence'] < 0.5:  
+
+        continue  
+
+  
+
+    display(Image(filename=imageName))  
+
+    print("\n")
